@@ -1,0 +1,27 @@
+[package]
+name = "flint"
+version = "0.1.0"
+edition = "2021"
+publish = false
+authors = ["Luna Amora <luna.mberry@gmail.com>"]
+readme = "README.md"
+license_file = "LICENCE"
+
+[lib]
+
+[dependencies]
+shuttle-service = { version = "0.8.0", features = ["bot-serenity"] }
+anyhow = "1.0.66"
+serenity = { version = "0.11.5", default-features = false, features = [
+    "client",
+    "framework",
+    "standard_framework",
+    "gateway",
+    "rustls_backend",
+    "model",
+] }
+shuttle-secrets = "0.8.0"
+tracing = "0.1.37"
+ashfire = { git = "https://github.com/LunaAmora/Ashfire" }
+# wasmtime = "3.0.1"
+# wasmtime-wasi = "3.0.1"
