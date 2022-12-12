@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 authors = ["Luna Amora <luna.mberry@gmail.com>"]
 readme = "README.md"
-license_file = "LICENCE"
+license-file = "LICENSE"
 
 [lib]
 
