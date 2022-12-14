@@ -1,6 +1,11 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    io::{BufReader, BufWriter},
+    sync::Arc,
+};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context as AnyCtx, Result};
+use ashfire::target::Target;
 use serenity::{
     async_trait,
     framework::standard::{
@@ -87,7 +92,11 @@ struct Default;
 async fn eval(ctx: &Context, msg: &Message, mut _args: Args) -> CommandResult {
     info!("Evaluating message: {}", msg.id);
 
-    let message = compile(msg);
+    let message = match compile(msg) {
+        Ok(ok) => ok.to_string(),
+        Err(err) => err.to_string(),
+    };
+
     let reply = msg.reply(ctx, message).await?;
 
     {
@@ -102,7 +111,21 @@ async fn eval(ctx: &Context, msg: &Message, mut _args: Args) -> CommandResult {
     Ok(())
 }
 
-fn compile(_msg: &Message) -> &str {
-    //Todo: trim the code and pass to the compiler
-    "Compilation result here. Pog!"
+fn compile(msg: &Message) -> Result<String> {
+    let content = &msg.content;
+    let trimmed = content
+        .strip_prefix("?eval")
+        .map(|s| s.trim_start())
+        .and_then(|s| s.strip_prefix("```"))
+        .and_then(|s| s.strip_suffix("```"))
+        .with_context(|| "Failed to parse a code block")?;
+
+    let reader = &mut BufReader::new(trimmed.as_bytes());
+    let mut writter = BufWriter::new(vec![]);
+
+    ashfire::compile_buffer(&msg.author.name, reader, &mut writter, Target::Wasi, true)?;
+
+    let output = writter.into_inner()?;
+    let out_string = String::from_utf8_lossy(&output).to_string();
+    Ok(out_string)
 }
