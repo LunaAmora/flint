@@ -11,17 +11,19 @@ license-file = "LICENSE"
 
 [dependencies]
 shuttle-service = { version = "0.8.0", features = ["bot-serenity"] }
-anyhow = "1.0.66"
+shuttle-secrets = "0.8.0"
 serenity = { version = "0.11.5", default-features = false, features = [
-    "client",
+    "gateway",
     "framework",
     "standard_framework",
-    "gateway",
     "rustls_backend",
-    "model",
 ] }
-shuttle-secrets = "0.8.0"
+
+anyhow = "1.0.66"
 tracing = "0.1.37"
+
 ashfire = { git = "https://github.com/LunaAmora/Ashfire" }
-# wasmtime = "3.0.1"
-# wasmtime-wasi = "3.0.1"
+
+wasmtime = { version = "3.0.1", default-features = false, features = ["cranelift", "wat"]}
+wasmtime-wasi = "3.0.1"
+wasi-common = "3.0.1"

@@ -17,6 +17,8 @@ use serenity::{
 };
 use shuttle_secrets::SecretStore;
 use tracing::{error, info};
+use wasmtime::*;
+use wasmtime_wasi::sync::WasiCtxBuilder;
 
 struct BotData;
 
@@ -39,8 +41,9 @@ impl EventHandler for Bot {
         };
 
         if let Some(id) = lock {
-            info!("A command we replied to was eddited: {}", id);
-            // Todo: edit the message with the new result
+            if let Err(why) = edit(&ctx, msg, id).await {
+                error!("Error in edit: {:?}", why);
+            }
         }
     }
 
@@ -92,12 +95,8 @@ struct Default;
 async fn eval(ctx: &Context, msg: &Message, mut _args: Args) -> CommandResult {
     info!("Evaluating message: {}", msg.id);
 
-    let message = match compile(msg) {
-        Ok(ok) => ok.to_string(),
-        Err(err) => err.to_string(),
-    };
-
-    let reply = msg.reply(ctx, message).await?;
+    let output = compile_otput(&msg.content, &msg.author.name);
+    let reply = msg.reply(ctx, output).await?;
 
     {
         let data_read = ctx.data.read().await;
@@ -111,9 +110,31 @@ async fn eval(ctx: &Context, msg: &Message, mut _args: Args) -> CommandResult {
     Ok(())
 }
 
-fn compile(msg: &Message) -> Result<String> {
-    let content = &msg.content;
-    let trimmed = content
+async fn edit(ctx: &Context, msg: MessageUpdateEvent, id: MessageId) -> CommandResult {
+    info!("Evaluating edited message: {}", id);
+
+    let name = &msg.author.map_or_else(String::new, |user| user.name);
+    let message = &msg
+        .content
+        .with_context(|| "Failed to get the msg content")?;
+
+    let output = compile_otput(message, name);
+
+    msg.channel_id
+        .edit_message(ctx, id, |m| m.content(output))
+        .await?;
+    Ok(())
+}
+
+fn compile_otput(message: &str, name: &str) -> String {
+    match compile(message, name) {
+        Ok(ok) => format!("Compilation result:\n```\n{ok}\n```"),
+        Err(err) => format!("Compilation error:\n```\n{err}\n```"),
+    }
+}
+
+fn compile(msg: &str, name: &str) -> Result<String> {
+    let trimmed = msg
         .strip_prefix("?eval")
         .map(|s| s.trim_start())
         .and_then(|s| s.strip_prefix("```"))
@@ -121,11 +142,38 @@ fn compile(msg: &Message) -> Result<String> {
         .with_context(|| "Failed to parse a code block")?;
 
     let reader = &mut BufReader::new(trimmed.as_bytes());
-    let mut writter = BufWriter::new(vec![]);
+    let mut writer = BufWriter::new(vec![]);
 
-    ashfire::compile_buffer(&msg.author.name, reader, &mut writter, Target::Wasi, true)?;
+    ashfire::compile_buffer(name, reader, &mut writer, Target::Wasi, true)?;
 
-    let output = writter.into_inner()?;
-    let out_string = String::from_utf8_lossy(&output).to_string();
-    Ok(out_string)
+    let output = writer.into_inner()?;
+    run(&output)
+}
+
+fn run(wat: &[u8]) -> Result<String> {
+    let engine = Engine::default();
+    let mut linker = Linker::new(&engine);
+    wasmtime_wasi::add_to_linker(&mut linker, |s| s)?;
+
+    let writer = wasi_common::pipe::WritePipe::new_in_memory();
+    let wasi = WasiCtxBuilder::new()
+        .stdout(Box::new(writer.clone()))
+        .build();
+    let mut store = Store::new(&engine, wasi);
+
+    let module = Module::new(&engine, wat)?;
+    linker.module(&mut store, "", &module)?;
+    linker
+        .get_default(&mut store, "")?
+        .typed::<(), (), _>(&store)?
+        .call(&mut store, ())?;
+
+    drop(store);
+    let vec = writer
+        .try_into_inner()
+        .expect("sole remaining reference to WritePipe")
+        .into_inner();
+
+    let output = String::from_utf8_lossy(&vec).to_string();
+    Ok(output)
 }
