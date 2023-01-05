@@ -159,16 +159,18 @@ fn run(wat: &[u8]) -> Result<String> {
     let wasi = WasiCtxBuilder::new()
         .stdout(Box::new(writer.clone()))
         .build();
-    let mut store = Store::new(&engine, wasi);
 
-    let module = Module::new(&engine, wat)?;
-    linker.module(&mut store, "", &module)?;
-    linker
-        .get_default(&mut store, "")?
-        .typed::<(), (), _>(&store)?
-        .call(&mut store, ())?;
+    {
+        let mut store = Store::new(&engine, wasi);
+        let module = Module::new(&engine, wat)?;
 
-    drop(store);
+        linker.module(&mut store, "", &module)?;
+        linker
+            .get_default(&mut store, "")?
+            .typed::<(), ()>(&store)?
+            .call(&mut store, ())?;
+    }
+
     let vec = writer
         .try_into_inner()
         .expect("sole remaining reference to WritePipe")
